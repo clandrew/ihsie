@@ -46,13 +46,18 @@ int Decode(Tile const& tile, int firstByteIndex, int secondByteIndex, int bitSel
 	return result;
 }
 
-void Export(std::wstring romFilename, std::wstring imageFilename)
+bool Export(std::wstring romFilename, std::wstring imageFilename)
 {
 	// Load ROM file
 	FILE* file = {};	
-	_wfopen_s(&file, romFilename.c_str(), L"rb");
+	errno_t fileOpenResult = _wfopen_s(&file, romFilename.c_str(), L"rb");
+	if (fileOpenResult != 0)
+	{
+		std::cout << "Encountered error opening file: " << fileOpenResult << ".\n";
+		return false;
+	}
 
-	Tile tiles[256];
+	Tile tiles[256]{};
 
 	for (int i = 0; i < 256; ++i)
 	{
@@ -173,6 +178,7 @@ void Export(std::wstring romFilename, std::wstring imageFilename)
 
 	stream->Commit(STGC_DEFAULT);
 
+	return true;
 }
 
 void Import(std::wstring sourceFilename, std::wstring romFilename)
@@ -347,6 +353,16 @@ void PrintUsage()
 
 }
 
+bool COMResultCheck(HRESULT hr)
+{
+	if (FAILED(hr))
+	{
+		std::wcout << L"Encountered COM error 0x" << std::hex << hr << L".\n";
+		return false;
+	}
+	return true;
+}
+
 int wmain(int argc, void** argv)
 {
 	if (argc < 4)
@@ -359,18 +375,27 @@ int wmain(int argc, void** argv)
 	std::wstring filename1 = reinterpret_cast<wchar_t*>(argv[2]);
 	std::wstring filename2 = reinterpret_cast<wchar_t*>(argv[3]);
 	
-	CoInitialize(nullptr);
+	if (!COMResultCheck(CoInitialize(nullptr)))
+	{
+		return -1;
+	}
 
-	CoCreateInstance(
+	if (!COMResultCheck(CoCreateInstance(
 		CLSID_WICImagingFactory,
 		NULL,
 		CLSCTX_INPROC_SERVER,
 		IID_IWICImagingFactory,
-		(LPVOID*)&wicImagingFactory);
+		(LPVOID*)&wicImagingFactory)))
+	{
+		return -1;
+	}
 
 	if (op == L"export")
 	{
-		Export(filename1, filename2);
+		if (!Export(filename1, filename2))
+		{
+			return -1;
+		}
 	}
 	else if (op == L"import")
 	{
