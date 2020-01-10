@@ -234,20 +234,6 @@ void Import()
 		palletizedImage.push_back(palletizedColor);
 	}
 
-	FILE* file = {};
-	fopen_s(&file, "icehockey.nes", "rb");
-	fseek(file, 0, SEEK_END);
-	long fileLength = ftell(file);
-	fseek(file, 0, SEEK_SET);
-
-	std::vector<byte> romData;
-	romData.resize(fileLength);
-	fread_s(romData.data(), romData.size(), 1, romData.size(), file);
-	fclose(file);
-
-	std::vector<byte> output;
-	output.resize(fileLength);
-
 	Tile tiles[256] = {};
 	for (int i = 0; i < palletizedImage.size(); ++i)
 	{
@@ -319,36 +305,43 @@ void Import()
 		}
 	}
 
+	/*
+	
+
+	fseek(file, 0, SEEK_END);
+	long fileLength = ftell(file);
+	fseek(file, 0, SEEK_SET);
+
+	std::vector<byte> romData;
+	romData.resize(fileLength);
+	fread_s(romData.data(), romData.size(), 1, romData.size(), file);
+	fclose(file);
+
+	std::vector<byte> output;
+	output.resize(fileLength);
+	*/
+
+	FILE* file = {};
+	fopen_s(&file, "icehockey.nes", "wb");
+
 	// Save tile data back into rom file
 	for (int tileIndex = 0; tileIndex < 256; tileIndex++)
 	{
-		for (int i = 0; i < 16; ++i)
-		{
-			int romOffset = baseOffset + (tileIndex * 16) + i;
-			output[romOffset] = tiles[tileIndex].Data[i];
-		}
-	}
-
-	// Validate output
-	for (int i = 0; i < output.size(); i++)
-	{
-		if (i < baseOffset)
-		{
-			assert(output[i] == 0);
-		}
-		else if (i < baseOffset + (256 * 16))
-		{
-			assert(output[i] == romData[i]);
-		}
-		else
-		{
-			assert(output[i] == 0);
-		}
+		int romOffset = baseOffset + (tileIndex * 16);
+		fseek(file, romOffset, SEEK_SET);
+		fwrite(tiles[tileIndex].Data, 1, 16, file);
 	}
 }
 
-int main()
+int main(int argc, void** argv)
 {
+	if (argc < 2)
+	{
+		std::wcout << L"Usage: ihsie export";
+	}
+
+	std::string op = reinterpret_cast<char*>(argv[1]);
+	
 	CoInitialize(nullptr);
 
 	CoCreateInstance(
@@ -358,7 +351,13 @@ int main()
 		IID_IWICImagingFactory,
 		(LPVOID*)&wicImagingFactory);
 
-	Export();
-	Import();
+	if (op == "export")
+	{
+		Export();
+	}
+	else if (op == "import")
+	{
+		Import();
+	}
 }
 
