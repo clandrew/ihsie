@@ -46,11 +46,11 @@ int Decode(Tile const& tile, int firstByteIndex, int secondByteIndex, int bitSel
 	return result;
 }
 
-void Export()
+void Export(std::wstring romFilename, std::wstring imageFilename)
 {
 	// Load ROM file
-	FILE* file = {};
-	fopen_s(&file, "icehockey.nes", "rb");
+	FILE* file = {};	
+	_wfopen_s(&file, romFilename.c_str(), L"rb");
 
 	Tile tiles[256];
 
@@ -80,7 +80,7 @@ void Export()
 	ComPtr<IWICStream> stream;
 	wicImagingFactory->CreateStream(&stream);
 
-	std::wstring destFilename = L"export.png";
+	std::wstring destFilename = imageFilename;
 	stream->InitializeFromFilename(destFilename.c_str(), GENERIC_WRITE);
 
 	ComPtr<IWICBitmapEncoder> encoder;
@@ -175,10 +175,8 @@ void Export()
 
 }
 
-void Import()
+void Import(std::wstring sourceFilename, std::wstring romFilename)
 {
-	std::wstring sourceFilename = L"export.png";
-
 	ComPtr<IWICBitmapDecoder> spDecoder;
 	wicImagingFactory->CreateDecoderFromFilename(sourceFilename.c_str(), NULL, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &spDecoder);
 
@@ -305,24 +303,8 @@ void Import()
 		}
 	}
 
-	/*
-	
-
-	fseek(file, 0, SEEK_END);
-	long fileLength = ftell(file);
-	fseek(file, 0, SEEK_SET);
-
-	std::vector<byte> romData;
-	romData.resize(fileLength);
-	fread_s(romData.data(), romData.size(), 1, romData.size(), file);
-	fclose(file);
-
-	std::vector<byte> output;
-	output.resize(fileLength);
-	*/
-
 	FILE* file = {};
-	fopen_s(&file, "icehockey.nes", "wb");
+	_wfopen_s(&file, romFilename.c_str(), L"wb");
 
 	// Save tile data back into rom file
 	for (int tileIndex = 0; tileIndex < 256; tileIndex++)
@@ -331,16 +313,31 @@ void Import()
 		fseek(file, romOffset, SEEK_SET);
 		fwrite(tiles[tileIndex].Data, 1, 16, file);
 	}
+
+	fclose(file);
 }
 
-int main(int argc, void** argv)
+void PrintUsage()
 {
-	if (argc < 2)
+	std::wcout
+		<< L"Usage:\n"
+		<< L"\tihsie export icehockey.nes image.png\n"
+		<< L"or\n"
+		<< L"\tihsie import image.png icehockey.nes\n";
+
+}
+
+int wmain(int argc, void** argv)
+{
+	if (argc < 4)
 	{
-		std::wcout << L"Usage: ihsie export";
+		PrintUsage();
+		return -1;
 	}
 
-	std::string op = reinterpret_cast<char*>(argv[1]);
+	std::wstring op = reinterpret_cast<wchar_t*>(argv[1]);
+	std::wstring filename1 = reinterpret_cast<wchar_t*>(argv[2]);
+	std::wstring filename2 = reinterpret_cast<wchar_t*>(argv[3]);
 	
 	CoInitialize(nullptr);
 
@@ -351,13 +348,18 @@ int main(int argc, void** argv)
 		IID_IWICImagingFactory,
 		(LPVOID*)&wicImagingFactory);
 
-	if (op == "export")
+	if (op == L"export")
 	{
-		Export();
+		Export(filename1, filename2);
 	}
-	else if (op == "import")
+	else if (op == L"import")
 	{
-		Import();
+		Import(filename1, filename2);
+	}
+	else
+	{
+		PrintUsage();
+		return -1;
 	}
 }
 
