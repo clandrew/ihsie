@@ -303,18 +303,38 @@ void Import(std::wstring sourceFilename, std::wstring romFilename)
 		}
 	}
 
-	FILE* file = {};
-	_wfopen_s(&file, romFilename.c_str(), L"wb");
+	std::vector<byte> romData;
+	{
+
+		FILE* file = {};
+		_wfopen_s(&file, romFilename.c_str(), L"rb");
+		fseek(file, 0, SEEK_END);
+
+		long fileLength = ftell(file);
+		romData.resize(fileLength);
+
+		fseek(file, 0, SEEK_SET);
+		fread(romData.data(), 1, fileLength, file);
+
+		fclose(file);
+	}
 
 	// Save tile data back into rom file
 	for (int tileIndex = 0; tileIndex < 256; tileIndex++)
 	{
 		int romOffset = baseOffset + (tileIndex * 16);
-		fseek(file, romOffset, SEEK_SET);
-		fwrite(tiles[tileIndex].Data, 1, 16, file);
-	}
 
-	fclose(file);
+		for (int i = 0; i < 16; ++i)
+		{
+			romData[romOffset + i] = tiles[tileIndex].Data[i];
+		}
+	}
+	{
+		FILE* file = {};
+		_wfopen_s(&file, romFilename.c_str(), L"wb");
+		fwrite(romData.data(), 1, romData.size(), file);
+		fclose(file);
+	}
 }
 
 void PrintUsage()
