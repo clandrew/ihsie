@@ -22,6 +22,36 @@ struct Tile
 	int Palletized[8 * 8];
 };
 
+bool CheckCOMResult(HRESULT hr)
+{
+	if (FAILED(hr))
+	{
+		std::wcout << L"Encountered COM error 0x" << std::hex << hr << L".\n";
+		return false;
+	}
+	return true;
+}
+
+bool CheckErrno(errno_t err)
+{
+	if (err != 0)
+	{
+		std::wcout << L"Encountered error code: " << err << L".\n";
+		return false;
+	}
+	return true;
+}
+
+bool CheckZero(int errorCode)
+{
+	if (errorCode != 0)
+	{
+		std::wcout << L"Encountered error code: " << errorCode << L".\n";
+		return false;
+	}
+	return true;
+}
+
 int Decode(Tile const& tile, int firstByteIndex, int secondByteIndex, int bitSelect)
 {
 	byte b0 = tile.Data[firstByteIndex];
@@ -50,23 +80,34 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 {
 	// Load ROM file
 	FILE* file = {};	
-	errno_t fileOpenResult = _wfopen_s(&file, romFilename.c_str(), L"rb");
-	if (fileOpenResult != 0)
+	if (!CheckErrno(_wfopen_s(&file, romFilename.c_str(), L"rb")))
 	{
-		std::cout << "Encountered error opening file: " << fileOpenResult << ".\n";
 		return false;
 	}
 
-	Tile tiles[256]{};
+	std::vector<Tile> tiles;
+	tiles.resize(256);
 
 	for (int i = 0; i < 256; ++i)
 	{
 		long tileOffset = baseOffset + (i * 0x10);
-		fseek(file, tileOffset, SEEK_SET);
-		fread(tiles[i].Data, 1, 16, file);
+		if (!CheckZero(fseek(file, tileOffset, SEEK_SET)))
+		{
+			return false;
+		}
+		size_t readCount = fread(tiles[i].Data, 1, 16, file);
+		if (readCount != 16)
+		{
+			std::wcout << L"Encountered I/O error when reading a file.\n";
+			return false;
+		}
 	}
 
-	fclose(file);
+	if (fclose(file) != 0)
+	{
+		std::wcout << L"Encountered I/O error when closing a file.\n";
+		return false;
+	}
 
 	for (int i = 0; i < 256; ++i)
 	{
@@ -83,43 +124,79 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	// Create WIC bitmap here.
 
 	ComPtr<IWICStream> stream;
-	wicImagingFactory->CreateStream(&stream);
+	if (!CheckCOMResult(wicImagingFactory->CreateStream(&stream)))
+	{
+		return false;
+	}
 
 	std::wstring destFilename = imageFilename;
-	stream->InitializeFromFilename(destFilename.c_str(), GENERIC_WRITE);
+	if (!CheckCOMResult(stream->InitializeFromFilename(destFilename.c_str(), GENERIC_WRITE)))
+	{
+		return false;
+	}
 
 	ComPtr<IWICBitmapEncoder> encoder;
-	wicImagingFactory->CreateEncoder(GUID_ContainerFormatPng, NULL, &encoder);
+	if (!CheckCOMResult(wicImagingFactory->CreateEncoder(GUID_ContainerFormatPng, NULL, &encoder)))
+	{
+		return false;
+	}
 
-	encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache);
+	if (!CheckCOMResult(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)))
+	{
+		return false;
+	}
 
 	ComPtr<IWICBitmap> wicBitmap;
-	wicImagingFactory->CreateBitmap(
+	if (!CheckCOMResult(wicImagingFactory->CreateBitmap(
 		bitmapWidth,
 		bitmapHeight,
-		GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wicBitmap);
+		GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wicBitmap)))
+	{
+		return false;
+	}
 
 	ComPtr<IWICBitmapFrameEncode> frameEncode;
-	encoder->CreateNewFrame(&frameEncode, nullptr);
+	if (!CheckCOMResult(encoder->CreateNewFrame(&frameEncode, nullptr)))
+	{
+		return false;
+	}
 
-	frameEncode->Initialize(nullptr);
+	if (!CheckCOMResult(frameEncode->Initialize(nullptr)))
+	{
+		return false;
+	}
 
-	frameEncode->SetSize(bitmapWidth, bitmapHeight);
+	if (!CheckCOMResult(frameEncode->SetSize(bitmapWidth, bitmapHeight)))
+	{
+		return false;
+	}
 
-	frameEncode->SetResolution(96, 96);
+	if (!CheckCOMResult(frameEncode->SetResolution(96, 96)))
+	{
+		return false;
+	}
 
 	WICPixelFormatGUID pixelFormat = GUID_WICPixelFormat32bppPBGRA;
-	frameEncode->SetPixelFormat(&pixelFormat);
+	if (!CheckCOMResult(frameEncode->SetPixelFormat(&pixelFormat)))
+	{
+		return false;
+	}
 
 	{
 		ComPtr<IWICBitmapLock> bitmapLock;
 		WICRect rcLock = { 0, 0, bitmapWidth, bitmapHeight };
-		wicBitmap->Lock(&rcLock, WICBitmapLockWrite, &bitmapLock);
+		if (!CheckCOMResult(wicBitmap->Lock(&rcLock, WICBitmapLockWrite, &bitmapLock)))
+		{
+			return false;
+		}
 
 		UINT cbBufferSize = 0;
 		BYTE* pv = NULL;
 
-		bitmapLock->GetDataPointer(&cbBufferSize, &pv);
+		if (!CheckCOMResult(bitmapLock->GetDataPointer(&cbBufferSize, &pv)))
+		{
+			return false;
+		}
 
 		uint32_t* pixelData = reinterpret_cast<uint32_t*>(pv);
 
@@ -168,46 +245,77 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 		}
 	}
 
-	frameEncode->WriteSource(
+	if (!CheckCOMResult(frameEncode->WriteSource(
 		wicBitmap.Get(),
-		NULL);
+		NULL)))
+	{
+		return false;
+	}
 
-	frameEncode->Commit();
+	if (!CheckCOMResult(frameEncode->Commit()))
+	{
+		return false;
+	}
 
-	encoder->Commit();
+	if (!CheckCOMResult(encoder->Commit()))
+	{
+		return false;
+	}
 
-	stream->Commit(STGC_DEFAULT);
+	if (!CheckCOMResult(stream->Commit(STGC_DEFAULT)))
+	{
+		return false;
+	}
 
 	return true;
 }
 
-void Import(std::wstring sourceFilename, std::wstring romFilename)
+bool Import(std::wstring sourceFilename, std::wstring romFilename)
 {
 	ComPtr<IWICBitmapDecoder> spDecoder;
-	wicImagingFactory->CreateDecoderFromFilename(sourceFilename.c_str(), NULL, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &spDecoder);
+	if (!CheckCOMResult(
+		wicImagingFactory->CreateDecoderFromFilename(sourceFilename.c_str(), NULL, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &spDecoder)))
+	{
+		return false;
+	}
 
 	ComPtr<IWICBitmapFrameDecode> spSource;
-	spDecoder->GetFrame(0, &spSource);
+	if (!CheckCOMResult(spDecoder->GetFrame(0, &spSource)))
+	{
+		return false;
+	}
 
 	ComPtr<IWICFormatConverter> spConverter;
-	wicImagingFactory->CreateFormatConverter(&spConverter);
+	if (!CheckCOMResult(wicImagingFactory->CreateFormatConverter(&spConverter)))
+	{
+		return false;
+	}
 
-	spConverter->Initialize(
+	if (!CheckCOMResult(spConverter->Initialize(
 		spSource.Get(),
 		GUID_WICPixelFormat32bppPBGRA,
 		WICBitmapDitherTypeNone,
 		NULL,
 		0.f,
-		WICBitmapPaletteTypeMedianCut);
+		WICBitmapPaletteTypeMedianCut)))
+	{
+		return false;
+	}
 
 	uint32_t refImageWidth, refImageHeight;
-	spConverter->GetSize(&refImageWidth, &refImageHeight);
+	if (!CheckCOMResult(spConverter->GetSize(&refImageWidth, &refImageHeight)))
+	{
+		return false;
+	}
 
 	std::vector<uint32_t> rgbData;
 	rgbData.resize(refImageWidth * refImageHeight);
 	const UINT srcImageSizeInBytes = refImageWidth * refImageHeight * 4;
 	const UINT srcImageStride = refImageWidth * 4;
-	spConverter->CopyPixels(NULL, srcImageStride, srcImageSizeInBytes, reinterpret_cast<BYTE*>(rgbData.data()));
+	if (!CheckCOMResult(spConverter->CopyPixels(NULL, srcImageStride, srcImageSizeInBytes, reinterpret_cast<BYTE*>(rgbData.data()))))
+	{
+		return false;
+	}
 
 	// Convert back to pallettized representation
 	std::vector<uint32_t> palletizedImage;
@@ -313,16 +421,38 @@ void Import(std::wstring sourceFilename, std::wstring romFilename)
 	{
 
 		FILE* file = {};
-		_wfopen_s(&file, romFilename.c_str(), L"rb");
-		fseek(file, 0, SEEK_END);
+		if (!CheckErrno(_wfopen_s(&file, romFilename.c_str(), L"rb")))
+		{
+			return false;
+		}
+		if (!CheckZero(fseek(file, 0, SEEK_END)))
+		{
+			return false;
+		}
 
 		long fileLength = ftell(file);
+		if (fileLength == 0)
+		{
+			std::wcout << L"File " << sourceFilename.c_str() << L"is unexpectedly of length 0.\n";
+		}
+
 		romData.resize(fileLength);
 
-		fseek(file, 0, SEEK_SET);
-		fread(romData.data(), 1, fileLength, file);
+		if (!CheckZero(fseek(file, 0, SEEK_SET)))
+		{
+			return false;
+		}
+		size_t readAmount = fread(romData.data(), 1, fileLength, file);
+		if (readAmount != fileLength)
+		{
+			std::wcout << L"Encountered I/O error when reading a file.\n";
+			return false;
+		}
 
-		fclose(file);
+		if (!CheckZero(fclose(file)))
+		{
+			return false;
+		}
 	}
 
 	// Save tile data back into rom file
@@ -337,10 +467,23 @@ void Import(std::wstring sourceFilename, std::wstring romFilename)
 	}
 	{
 		FILE* file = {};
-		_wfopen_s(&file, romFilename.c_str(), L"wb");
-		fwrite(romData.data(), 1, romData.size(), file);
-		fclose(file);
+		if (!CheckErrno(_wfopen_s(&file, romFilename.c_str(), L"wb")))
+		{
+			return false;
+		}
+		size_t writeAmount = fwrite(romData.data(), 1, romData.size(), file);
+		if (writeAmount != romData.size())
+		{
+			std::wcout << L"Encountered I/O error when writing a file.\n";
+		}
+
+		if (!CheckZero(fclose(file)))
+		{
+			return false;
+		}
 	}
+
+	return true;
 }
 
 void PrintUsage()
@@ -350,17 +493,6 @@ void PrintUsage()
 		<< L"\tihsie export icehockey.nes image.png\n"
 		<< L"or\n"
 		<< L"\tihsie import image.png icehockey.nes\n";
-
-}
-
-bool COMResultCheck(HRESULT hr)
-{
-	if (FAILED(hr))
-	{
-		std::wcout << L"Encountered COM error 0x" << std::hex << hr << L".\n";
-		return false;
-	}
-	return true;
 }
 
 int wmain(int argc, void** argv)
@@ -375,12 +507,12 @@ int wmain(int argc, void** argv)
 	std::wstring filename1 = reinterpret_cast<wchar_t*>(argv[2]);
 	std::wstring filename2 = reinterpret_cast<wchar_t*>(argv[3]);
 	
-	if (!COMResultCheck(CoInitialize(nullptr)))
+	if (!CheckCOMResult(CoInitialize(nullptr)))
 	{
 		return -1;
 	}
 
-	if (!COMResultCheck(CoCreateInstance(
+	if (!CheckCOMResult(CoCreateInstance(
 		CLSID_WICImagingFactory,
 		NULL,
 		CLSCTX_INPROC_SERVER,
@@ -399,7 +531,10 @@ int wmain(int argc, void** argv)
 	}
 	else if (op == L"import")
 	{
-		Import(filename1, filename2);
+		if (!Import(filename1, filename2))
+		{
+			return -1;
+		}
 	}
 	else
 	{
