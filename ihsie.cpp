@@ -16,6 +16,17 @@ static const long g_imageDataOffset = 0x8010;
 // Globals
 ComPtr<IWICImagingFactory> g_wicImagingFactory;
 
+#if _DEBUG
+	void DebugEvent()
+	{
+		__debugbreak();
+	}
+#else
+	void DebugEvent()
+	{
+	}
+#endif
+
 struct Tile
 {
 	byte Data[16];
@@ -27,7 +38,7 @@ bool CheckCOMResult(HRESULT hr)
 	if (FAILED(hr))
 	{
 		std::wcout << L"Encountered COM error 0x" << std::hex << hr << L".\n";
-		__debugbreak();
+		DebugEvent();
 		return false;
 	}
 	return true;
@@ -38,7 +49,7 @@ bool CheckErrno(errno_t err)
 	if (err != 0)
 	{
 		std::wcout << L"Encountered error code: " << err << L".\n";
-		__debugbreak();
+		DebugEvent();
 		return false;
 	}
 	return true;
@@ -49,7 +60,7 @@ bool CheckZero(int errorCode)
 	if (errorCode != 0)
 	{
 		std::wcout << L"Encountered error code: " << errorCode << L".\n";
-		__debugbreak();
+		DebugEvent();
 		return false;
 	}
 	return true;
@@ -102,7 +113,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 		if (readCount != 16)
 		{
 			std::wcout << L"Encountered I/O error when reading a file.\n";
-			__debugbreak();
+			DebugEvent();
 			return false;
 		}
 	}
@@ -110,7 +121,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	if (fclose(file) != 0)
 	{
 		std::wcout << L"Encountered I/O error when closing a file.\n";
-		__debugbreak();
+		DebugEvent();
 		return false;
 	}
 
@@ -324,7 +335,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 
 	// Convert back to pallettized representation
 	std::vector<uint32_t> palletizedImage;
-	for (int i = 0; i < rgbData.size(); ++i)
+	for (size_t i = 0; i < rgbData.size(); ++i)
 	{
 		uint32_t rgb = rgbData[i];
 		uint32_t palletizedColor = 0;
@@ -353,7 +364,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 
 	std::vector<Tile> tiles;
 	tiles.resize(256);
-	for (int i = 0; i < palletizedImage.size(); ++i)
+	for (size_t i = 0; i < palletizedImage.size(); ++i)
 	{
 		int imageX = i % g_exportedImageWidthInPixels;
 		int imageY = i / g_exportedImageWidthInPixels;
@@ -440,7 +451,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		if (fileLength == 0)
 		{
 			std::wcout << L"File " << sourceFilename.c_str() << L"is unexpectedly of length 0.\n";
-			__debugbreak();
+			DebugEvent();
 			return false;
 		}
 
@@ -454,7 +465,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		if (readAmount != fileLength)
 		{
 			std::wcout << L"Encountered I/O error when reading a file.\n";
-			__debugbreak();
+			DebugEvent();
 			return false;
 		}
 
@@ -484,7 +495,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		if (writeAmount != romData.size())
 		{
 			std::wcout << L"Encountered I/O error when writing a file.\n";
-			__debugbreak();
+			DebugEvent();
 			return false;
 		}
 
