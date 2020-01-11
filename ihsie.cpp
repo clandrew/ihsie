@@ -27,6 +27,7 @@ bool CheckCOMResult(HRESULT hr)
 	if (FAILED(hr))
 	{
 		std::wcout << L"Encountered COM error 0x" << std::hex << hr << L".\n";
+		__debugbreak();
 		return false;
 	}
 	return true;
@@ -37,6 +38,7 @@ bool CheckErrno(errno_t err)
 	if (err != 0)
 	{
 		std::wcout << L"Encountered error code: " << err << L".\n";
+		__debugbreak();
 		return false;
 	}
 	return true;
@@ -47,6 +49,7 @@ bool CheckZero(int errorCode)
 	if (errorCode != 0)
 	{
 		std::wcout << L"Encountered error code: " << errorCode << L".\n";
+		__debugbreak();
 		return false;
 	}
 	return true;
@@ -99,6 +102,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 		if (readCount != 16)
 		{
 			std::wcout << L"Encountered I/O error when reading a file.\n";
+			__debugbreak();
 			return false;
 		}
 	}
@@ -106,6 +110,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	if (fclose(file) != 0)
 	{
 		std::wcout << L"Encountered I/O error when closing a file.\n";
+		__debugbreak();
 		return false;
 	}
 
@@ -434,6 +439,8 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		if (fileLength == 0)
 		{
 			std::wcout << L"File " << sourceFilename.c_str() << L"is unexpectedly of length 0.\n";
+			__debugbreak();
+			return false;
 		}
 
 		romData.resize(fileLength);
@@ -446,6 +453,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		if (readAmount != fileLength)
 		{
 			std::wcout << L"Encountered I/O error when reading a file.\n";
+			__debugbreak();
 			return false;
 		}
 
@@ -475,6 +483,8 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		if (writeAmount != romData.size())
 		{
 			std::wcout << L"Encountered I/O error when writing a file.\n";
+			__debugbreak();
+			return false;
 		}
 
 		if (!CheckZero(fclose(file)))
