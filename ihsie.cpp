@@ -4,17 +4,17 @@
 #include "pch.h"
 
 // Constants
-static const int tileWidth = 8;
-static const int tilesWide = 16;
-static const int tileHeight = 8;
-static const int tilesHigh = 16;
-static const int bitmapWidth = tileWidth * tilesWide;
-static const int bitmapHeight = tileHeight * tilesHigh;
-static const int bitSelectReference[] = { 0x80, 0x40, 0x20, 0x10, 0x8, 0x4, 0x2, 0x1 };
-static const long baseOffset = 0x8010;
+static const int g_tileWidthInPixels = 8;
+static const int g_tileXCount = 16;
+static const int g_tileHeightInPixels = 8;
+static const int g_tileYCount = 16;
+static const int g_exportedImageWidthInPixels = g_tileWidthInPixels * g_tileXCount;
+static const int g_exportedImageHeightInPixels = g_tileHeightInPixels * g_tileYCount;
+static const int g_bitSelectionReference[] = { 0x80, 0x40, 0x20, 0x10, 0x8, 0x4, 0x2, 0x1 };
+static const long g_imageDataOffset = 0x8010;
 
 // Globals
-ComPtr<IWICImagingFactory> wicImagingFactory;
+ComPtr<IWICImagingFactory> g_wicImagingFactory;
 
 struct Tile
 {
@@ -93,7 +93,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 
 	for (int i = 0; i < 256; ++i)
 	{
-		long tileOffset = baseOffset + (i * 0x10);
+		long tileOffset = g_imageDataOffset + (i * 0x10);
 		if (!CheckZero(fseek(file, tileOffset, SEEK_SET)))
 		{
 			return false;
@@ -121,7 +121,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 			for (int x = 0; x < 8; ++x)
 			{
 				int pixelIndex = (y * 8) + x;
-				tiles[i].Palletized[pixelIndex] = Decode(tiles[i], 0 + y, 8 + y, bitSelectReference[x]);
+				tiles[i].Palletized[pixelIndex] = Decode(tiles[i], 0 + y, 8 + y, g_bitSelectionReference[x]);
 			}
 		}
 	}
@@ -129,7 +129,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	// Create WIC bitmap here.
 
 	ComPtr<IWICStream> stream;
-	if (!CheckCOMResult(wicImagingFactory->CreateStream(&stream)))
+	if (!CheckCOMResult(g_wicImagingFactory->CreateStream(&stream)))
 	{
 		return false;
 	}
@@ -141,7 +141,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	}
 
 	ComPtr<IWICBitmapEncoder> encoder;
-	if (!CheckCOMResult(wicImagingFactory->CreateEncoder(GUID_ContainerFormatPng, NULL, &encoder)))
+	if (!CheckCOMResult(g_wicImagingFactory->CreateEncoder(GUID_ContainerFormatPng, NULL, &encoder)))
 	{
 		return false;
 	}
@@ -152,9 +152,9 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	}
 
 	ComPtr<IWICBitmap> wicBitmap;
-	if (!CheckCOMResult(wicImagingFactory->CreateBitmap(
-		bitmapWidth,
-		bitmapHeight,
+	if (!CheckCOMResult(g_wicImagingFactory->CreateBitmap(
+		g_exportedImageWidthInPixels,
+		g_exportedImageHeightInPixels,
 		GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wicBitmap)))
 	{
 		return false;
@@ -171,7 +171,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 		return false;
 	}
 
-	if (!CheckCOMResult(frameEncode->SetSize(bitmapWidth, bitmapHeight)))
+	if (!CheckCOMResult(frameEncode->SetSize(g_exportedImageWidthInPixels, g_exportedImageHeightInPixels)))
 	{
 		return false;
 	}
@@ -189,7 +189,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 
 	{
 		ComPtr<IWICBitmapLock> bitmapLock;
-		WICRect rcLock = { 0, 0, bitmapWidth, bitmapHeight };
+		WICRect rcLock = { 0, 0, g_exportedImageWidthInPixels, g_exportedImageHeightInPixels };
 		if (!CheckCOMResult(wicBitmap->Lock(&rcLock, WICBitmapLockWrite, &bitmapLock)))
 		{
 			return false;
@@ -205,15 +205,15 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 
 		uint32_t* pixelData = reinterpret_cast<uint32_t*>(pv);
 
-		for (int tileY = 0; tileY < tilesHigh; ++tileY)
+		for (int tileY = 0; tileY < g_tileYCount; ++tileY)
 		{
-			int destYOrigin = tileY * tileHeight;
+			int destYOrigin = tileY * g_tileHeightInPixels;
 
-			for (int tileX = 0; tileX < tilesWide; ++tileX)
+			for (int tileX = 0; tileX < g_tileXCount; ++tileX)
 			{
-				int destXOrigin = tileX * tileWidth;
+				int destXOrigin = tileX * g_tileWidthInPixels;
 
-				int tileIndex = (tileY * tilesWide) + tileX;
+				int tileIndex = (tileY * g_tileXCount) + tileX;
 				Tile& tile = tiles[tileIndex];
 
 				for (int y = 0; y < 8; ++y)
@@ -242,7 +242,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 
 						int destX = destXOrigin + x;
 						int destY = destYOrigin + y;
-						int destPixelIndex = (destY * bitmapWidth) + destX;
+						int destPixelIndex = (destY * g_exportedImageWidthInPixels) + destX;
 						pixelData[destPixelIndex] = rgba;
 					}
 				}
@@ -279,7 +279,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 {
 	ComPtr<IWICBitmapDecoder> spDecoder;
 	if (!CheckCOMResult(
-		wicImagingFactory->CreateDecoderFromFilename(sourceFilename.c_str(), NULL, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &spDecoder)))
+		g_wicImagingFactory->CreateDecoderFromFilename(sourceFilename.c_str(), NULL, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &spDecoder)))
 	{
 		return false;
 	}
@@ -291,7 +291,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 	}
 
 	ComPtr<IWICFormatConverter> spConverter;
-	if (!CheckCOMResult(wicImagingFactory->CreateFormatConverter(&spConverter)))
+	if (!CheckCOMResult(g_wicImagingFactory->CreateFormatConverter(&spConverter)))
 	{
 		return false;
 	}
@@ -355,24 +355,24 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 	tiles.resize(256);
 	for (int i = 0; i < palletizedImage.size(); ++i)
 	{
-		int imageX = i % bitmapWidth;
-		int imageY = i / bitmapWidth;
-		int tileX = imageX / tileWidth;
-		int tileY = imageY / tileHeight;
-		int tileIndex = (tileY * tilesWide) + tileX;
+		int imageX = i % g_exportedImageWidthInPixels;
+		int imageY = i / g_exportedImageWidthInPixels;
+		int tileX = imageX / g_tileWidthInPixels;
+		int tileY = imageY / g_tileHeightInPixels;
+		int tileIndex = (tileY * g_tileXCount) + tileX;
 
-		int xWithinTile = imageX % tileWidth;
-		int yWithinTile = imageY % tileHeight;
-		int indexWithinTile = (yWithinTile * tileWidth) + xWithinTile;
+		int xWithinTile = imageX % g_tileWidthInPixels;
+		int yWithinTile = imageY % g_tileHeightInPixels;
+		int indexWithinTile = (yWithinTile * g_tileWidthInPixels) + xWithinTile;
 		
 		tiles[tileIndex].Palletized[indexWithinTile] = palletizedImage[i];
 	}
 
-	for (int tileY = 0; tileY < tilesHigh; ++tileY)
+	for (int tileY = 0; tileY < g_tileYCount; ++tileY)
 	{
-		for (int tileX = 0; tileX < tilesWide; ++tileX)
+		for (int tileX = 0; tileX < g_tileXCount; ++tileX)
 		{
-			int tileIndex = (tileY * tilesWide) + tileX;
+			int tileIndex = (tileY * g_tileXCount) + tileX;
 			Tile& tile = tiles[tileIndex];
 
 			// Turn palletized into Data
@@ -405,7 +405,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 						f1 = true;
 					}
 
-					int bitSelect = bitSelectReference[x];
+					int bitSelect = g_bitSelectionReference[x];
 					int firstByteIndex = 0 + y;
 					int secondByteIndex = 8 + y;
 
@@ -467,7 +467,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 	// Save tile data back into rom file
 	for (int tileIndex = 0; tileIndex < 256; tileIndex++)
 	{
-		int romOffset = baseOffset + (tileIndex * 16);
+		int romOffset = g_imageDataOffset + (tileIndex * 16);
 
 		for (int i = 0; i < 16; ++i)
 		{
@@ -528,7 +528,7 @@ int wmain(int argc, void** argv)
 		NULL,
 		CLSCTX_INPROC_SERVER,
 		IID_IWICImagingFactory,
-		(LPVOID*)&wicImagingFactory)))
+		(LPVOID*)&g_wicImagingFactory)))
 	{
 		return -1;
 	}
