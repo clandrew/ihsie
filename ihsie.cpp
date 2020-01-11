@@ -351,7 +351,8 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		palletizedImage.push_back(palletizedColor);
 	}
 
-	Tile tiles[256] = {};
+	std::vector<Tile> tiles;
+	tiles.resize(256);
 	for (int i = 0; i < palletizedImage.size(); ++i)
 	{
 		int imageX = i % bitmapWidth;
