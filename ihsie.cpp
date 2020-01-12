@@ -27,10 +27,57 @@ ComPtr<IWICImagingFactory> g_wicImagingFactory;
 	}
 #endif
 
-struct Tile
+struct RawTileData
 {
 	byte Data[16];
+};
+
+struct Tile
+{
+	RawTileData RawData;
 	int Palletized[8 * 8];
+};
+
+class TileGrid
+{
+	int m_tileXCount;
+	int m_tileYCount;
+	std::vector<Tile> m_tiles;
+
+public:
+	TileGrid()
+	{
+		m_tileXCount = 16;
+		m_tileYCount = 16;
+		m_tiles.resize(m_tileXCount * m_tileYCount);
+	}
+
+	void SetPalletizedValue(int tileIndex, int xPosition, int yPosition, int value)
+	{
+		int pixelIndex = (yPosition * 8) + xPosition;
+		m_tiles[tileIndex].Palletized[pixelIndex] = value;
+	}
+
+	int GetPalletizedValue(int tileIndex, int xPosition, int yPosition) const
+	{
+		int pixelIndex = (yPosition * 8) + xPosition;
+		return m_tiles[tileIndex].Palletized[pixelIndex];
+	}
+
+	void SetRawDataField(int tileIndex, int byteIndex, int bitSelection)
+	{
+		m_tiles[tileIndex].RawData.Data[byteIndex] |= bitSelection;
+	}
+
+	byte GetRawDataField(int tileIndex, int byteIndex) const
+	{
+		return m_tiles[tileIndex].RawData.Data[byteIndex];
+	}
+
+	Tile* GetTile(int tileIndex)
+	{
+		return &m_tiles[tileIndex];
+	}
 };
 
 bool CheckCOMResult(HRESULT hr)
@@ -66,10 +113,10 @@ bool CheckZero(int errorCode)
 	return true;
 }
 
-int Decode(Tile const& tile, int firstByteIndex, int secondByteIndex, int bitSelect)
+int Decode(RawTileData const& rawTileData, int firstByteIndex, int secondByteIndex, int bitSelect)
 {
-	byte b0 = tile.Data[firstByteIndex];
-	byte b1 = tile.Data[secondByteIndex];
+	byte b0 = rawTileData.Data[firstByteIndex];
+	byte b1 = rawTileData.Data[secondByteIndex];
 
 	byte f0 = b0 & bitSelect;
 	byte f1 = b1 & bitSelect;
@@ -90,62 +137,14 @@ int Decode(Tile const& tile, int firstByteIndex, int secondByteIndex, int bitSel
 	return result;
 }
 
-bool Export(std::wstring romFilename, std::wstring imageFilename)
+bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilename)
 {
-	// Load ROM file
-	FILE* file = {};	
-	if (!CheckErrno(_wfopen_s(&file, romFilename.c_str(), L"rb")))
-	{
-		return false;
-	}
-
-	std::vector<Tile> tiles;
-	tiles.resize(256);
-
-	for (int i = 0; i < 256; ++i)
-	{
-		long tileOffset = g_imageDataOffset + (i * 0x10);
-		if (!CheckZero(fseek(file, tileOffset, SEEK_SET)))
-		{
-			return false;
-		}
-		size_t readCount = fread(tiles[i].Data, 1, 16, file);
-		if (readCount != 16)
-		{
-			std::wcout << L"Encountered I/O error when reading a file.\n";
-			DebugEvent();
-			return false;
-		}
-	}
-
-	if (fclose(file) != 0)
-	{
-		std::wcout << L"Encountered I/O error when closing a file.\n";
-		DebugEvent();
-		return false;
-	}
-
-	for (int i = 0; i < 256; ++i)
-	{
-		for (int y = 0; y < 8; ++y)
-		{
-			for (int x = 0; x < 8; ++x)
-			{
-				int pixelIndex = (y * 8) + x;
-				tiles[i].Palletized[pixelIndex] = Decode(tiles[i], 0 + y, 8 + y, g_bitSelectionReference[x]);
-			}
-		}
-	}
-
-	// Create WIC bitmap here.
-
 	ComPtr<IWICStream> stream;
 	if (!CheckCOMResult(g_wicImagingFactory->CreateStream(&stream)))
 	{
 		return false;
 	}
 
-	std::wstring destFilename = imageFilename;
 	if (!CheckCOMResult(stream->InitializeFromFilename(destFilename.c_str(), GENERIC_WRITE)))
 	{
 		return false;
@@ -225,14 +224,13 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 				int destXOrigin = tileX * g_tileWidthInPixels;
 
 				int tileIndex = (tileY * g_tileXCount) + tileX;
-				Tile& tile = tiles[tileIndex];
 
 				for (int y = 0; y < 8; ++y)
 				{
 					for (int x = 0; x < 8; ++x)
 					{
-						int palletizedIndex = (y * 8) + x;
-						int palletizedColor = tile.Palletized[palletizedIndex];
+						int palletizedColor = tiles.GetPalletizedValue(tileIndex, x, y);
+
 						uint32_t rgba = 0;
 						if (palletizedColor == 0)
 						{
@@ -282,6 +280,59 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	{
 		return false;
 	}
+
+	return true;
+}
+
+bool Export(std::wstring romFilename, std::wstring imageFilename)
+{
+	// Load ROM file
+	FILE* file = {};	
+	if (!CheckErrno(_wfopen_s(&file, romFilename.c_str(), L"rb")))
+	{
+		return false;
+	}
+
+	TileGrid tiles;
+
+	for (int i = 0; i < 256; ++i)
+	{
+		long tileOffset = g_imageDataOffset + (i * 0x10);
+		if (!CheckZero(fseek(file, tileOffset, SEEK_SET)))
+		{
+			return false;
+		}
+		size_t readCount = fread(tiles.GetTile(i)->RawData.Data, 1, 16, file);
+		if (readCount != 16)
+		{
+			std::wcout << L"Encountered I/O error when reading a file.\n";
+			DebugEvent();
+			return false;
+		}
+	}
+
+	if (fclose(file) != 0)
+	{
+		std::wcout << L"Encountered I/O error when closing a file.\n";
+		DebugEvent();
+		return false;
+	}
+
+	for (int i = 0; i < 256; ++i)
+	{
+		for (int y = 0; y < 8; ++y)
+		{
+			for (int x = 0; x < 8; ++x)
+			{
+				int decodedValue = Decode(tiles.GetTile(i)->RawData, 0 + y, 8 + y, g_bitSelectionReference[x]);
+				tiles.SetPalletizedValue(i, x, y, decodedValue);
+			}
+		}
+	}
+
+	ExportPalletizedTilesToImage(tiles, imageFilename);
+
+	std::vector<Tile> reformattedTiles;
 
 	return true;
 }
@@ -357,13 +408,14 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		}
 		else
 		{
-			assert(false);
+			std::wcout << L"Encountered an unexpected color in the image to be imported.";
+			DebugEvent();
+			return false;
 		}
 		palletizedImage.push_back(palletizedColor);
 	}
 
-	std::vector<Tile> tiles;
-	tiles.resize(256);
+	TileGrid tiles;
 	for (size_t i = 0; i < palletizedImage.size(); ++i)
 	{
 		int imageX = i % g_exportedImageWidthInPixels;
@@ -374,9 +426,8 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 
 		int xWithinTile = imageX % g_tileWidthInPixels;
 		int yWithinTile = imageY % g_tileHeightInPixels;
-		int indexWithinTile = (yWithinTile * g_tileWidthInPixels) + xWithinTile;
 		
-		tiles[tileIndex].Palletized[indexWithinTile] = palletizedImage[i];
+		tiles.SetPalletizedValue(tileIndex, xWithinTile, yWithinTile, palletizedImage[i]);
 	}
 
 	for (int tileY = 0; tileY < g_tileYCount; ++tileY)
@@ -384,15 +435,13 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 		for (int tileX = 0; tileX < g_tileXCount; ++tileX)
 		{
 			int tileIndex = (tileY * g_tileXCount) + tileX;
-			Tile& tile = tiles[tileIndex];
 
-			// Turn palletized into Data
+			// Turn palletized into RawData
 			for (int y = 0; y < 8; ++y)
 			{
 				for (int x = 0; x < 8; ++x)
 				{
-					int pixelIndex = (y * 8) + x;
-					uint32_t palletized = tiles[tileIndex].Palletized[pixelIndex];
+					int palletized = tiles.GetPalletizedValue(tileIndex, x, y);
 
 					byte f0{};
 					byte f1{};
@@ -422,12 +471,12 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 
 					if (f0)
 					{
-						tile.Data[firstByteIndex] |= bitSelect;
+						tiles.SetRawDataField(tileIndex, firstByteIndex, bitSelect);
 					}
 
 					if (f1)
 					{
-						tile.Data[secondByteIndex] |= bitSelect;
+						tiles.SetRawDataField(tileIndex, secondByteIndex, bitSelect);
 					}
 				}
 			}
@@ -482,7 +531,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 
 		for (int i = 0; i < 16; ++i)
 		{
-			romData[romOffset + i] = tiles[tileIndex].Data[i];
+			romData[romOffset + i] = tiles.GetRawDataField(tileIndex, i);
 		}
 	}
 	{
@@ -563,5 +612,8 @@ int wmain(int argc, void** argv)
 		PrintUsage();
 		return -1;
 	}
+
+	std::wcout << L"Success.\n";
+	return 0;
 }
 
