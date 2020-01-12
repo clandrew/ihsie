@@ -2,6 +2,7 @@
 //
 
 #include "pch.h"
+#include "Util.h"
 
 // Constants
 static const int g_tileWidthInPixels = 8;
@@ -15,17 +16,6 @@ static const long g_imageDataOffset = 0x8010;
 
 // Globals
 ComPtr<IWICImagingFactory> g_wicImagingFactory;
-
-#if _DEBUG
-	void DebugEvent()
-	{
-		__debugbreak();
-	}
-#else
-	void DebugEvent()
-	{
-	}
-#endif
 
 struct RawTileData
 {
@@ -85,39 +75,6 @@ public:
 	}
 };
 
-bool CheckCOMResult(HRESULT hr)
-{
-	if (FAILED(hr))
-	{
-		std::wcout << L"Encountered COM error 0x" << std::hex << hr << L".\n";
-		DebugEvent();
-		return false;
-	}
-	return true;
-}
-
-bool CheckErrno(errno_t err)
-{
-	if (err != 0)
-	{
-		std::wcout << L"Encountered error code: " << err << L".\n";
-		DebugEvent();
-		return false;
-	}
-	return true;
-}
-
-bool CheckZero(int errorCode)
-{
-	if (errorCode != 0)
-	{
-		std::wcout << L"Encountered error code: " << errorCode << L".\n";
-		DebugEvent();
-		return false;
-	}
-	return true;
-}
-
 int Decode(RawTileData const& rawTileData, int firstByteIndex, int secondByteIndex, int bitSelect)
 {
 	byte b0 = rawTileData.Data[firstByteIndex];
@@ -142,151 +99,209 @@ int Decode(RawTileData const& rawTileData, int firstByteIndex, int secondByteInd
 	return result;
 }
 
-bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilename)
+class ImageEncodeHelper
 {
-	ComPtr<IWICStream> stream;
-	if (!CheckCOMResult(g_wicImagingFactory->CreateStream(&stream)))
-	{
-		return false;
-	}
+	ComPtr<IWICBitmapFrameEncode> m_frameEncode;
+	ComPtr<IWICBitmap> m_wicBitmap;
+	ComPtr<IWICBitmapEncoder> m_encoder;
+	ComPtr<IWICStream> m_stream;
+	BYTE* m_dataPointer;
 
-	if (!CheckCOMResult(stream->InitializeFromFilename(destFilename.c_str(), GENERIC_WRITE)))
+public:
+	bool Initialize(std::wstring destFilename)
 	{
-		return false;
-	}
+		if (!CheckCOMResult(g_wicImagingFactory->CreateStream(&m_stream)))
+		{
+			return false;
+		}
 
-	ComPtr<IWICBitmapEncoder> encoder;
-	if (!CheckCOMResult(g_wicImagingFactory->CreateEncoder(GUID_ContainerFormatPng, NULL, &encoder)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(m_stream->InitializeFromFilename(destFilename.c_str(), GENERIC_WRITE)))
+		{
+			return false;
+		}
 
-	if (!CheckCOMResult(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(g_wicImagingFactory->CreateEncoder(GUID_ContainerFormatPng, NULL, &m_encoder)))
+		{
+			return false;
+		}
 
-	ComPtr<IWICBitmap> wicBitmap;
-	if (!CheckCOMResult(g_wicImagingFactory->CreateBitmap(
-		g_exportedImageWidthInPixels,
-		g_exportedImageHeightInPixels,
-		GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &wicBitmap)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(m_encoder->Initialize(m_stream.Get(), WICBitmapEncoderNoCache)))
+		{
+			return false;
+		}
 
-	ComPtr<IWICBitmapFrameEncode> frameEncode;
-	if (!CheckCOMResult(encoder->CreateNewFrame(&frameEncode, nullptr)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(g_wicImagingFactory->CreateBitmap(
+			g_exportedImageWidthInPixels,
+			g_exportedImageHeightInPixels,
+			GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &m_wicBitmap)))
+		{
+			return false;
+		}
 
-	if (!CheckCOMResult(frameEncode->Initialize(nullptr)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(m_encoder->CreateNewFrame(&m_frameEncode, nullptr)))
+		{
+			return false;
+		}
 
-	if (!CheckCOMResult(frameEncode->SetSize(g_exportedImageWidthInPixels, g_exportedImageHeightInPixels)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(m_frameEncode->Initialize(nullptr)))
+		{
+			return false;
+		}
 
-	if (!CheckCOMResult(frameEncode->SetResolution(96, 96)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(m_frameEncode->SetSize(g_exportedImageWidthInPixels, g_exportedImageHeightInPixels)))
+		{
+			return false;
+		}
 
-	WICPixelFormatGUID pixelFormat = GUID_WICPixelFormat32bppPBGRA;
-	if (!CheckCOMResult(frameEncode->SetPixelFormat(&pixelFormat)))
-	{
-		return false;
-	}
+		if (!CheckCOMResult(m_frameEncode->SetResolution(96, 96)))
+		{
+			return false;
+		}
 
-	{
+		WICPixelFormatGUID pixelFormat = GUID_WICPixelFormat32bppPBGRA;
+		if (!CheckCOMResult(m_frameEncode->SetPixelFormat(&pixelFormat)))
+		{
+			return false;
+		}
+
 		ComPtr<IWICBitmapLock> bitmapLock;
 		WICRect rcLock = { 0, 0, g_exportedImageWidthInPixels, g_exportedImageHeightInPixels };
-		if (!CheckCOMResult(wicBitmap->Lock(&rcLock, WICBitmapLockWrite, &bitmapLock)))
+		if (!CheckCOMResult(m_wicBitmap->Lock(&rcLock, WICBitmapLockWrite, &bitmapLock)))
 		{
 			return false;
 		}
 
 		UINT cbBufferSize = 0;
-		BYTE* pv = NULL;
 
-		if (!CheckCOMResult(bitmapLock->GetDataPointer(&cbBufferSize, &pv)))
+		if (!CheckCOMResult(bitmapLock->GetDataPointer(&cbBufferSize, &m_dataPointer)))
 		{
 			return false;
 		}
 
-		uint32_t* pixelData = reinterpret_cast<uint32_t*>(pv);
+		return true;
+	}
 
-		for (int tileY = 0; tileY < g_tileYCount; ++tileY)
+	bool Finalize()
+	{
+		if (!CheckCOMResult(m_frameEncode->WriteSource(
+			m_wicBitmap.Get(),
+			NULL)))
 		{
-			int destYOrigin = tileY * g_tileHeightInPixels;
+			return false;
+		}
 
-			for (int tileX = 0; tileX < g_tileXCount; ++tileX)
+		if (!CheckCOMResult(m_frameEncode->Commit()))
+		{
+			return false;
+		}
+
+		if (!CheckCOMResult(m_encoder->Commit()))
+		{
+			return false;
+		}
+
+		if (!CheckCOMResult(m_stream->Commit(STGC_DEFAULT)))
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	BYTE* GetDataPointer()
+	{
+		return m_dataPointer;
+	}
+};
+
+bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilename)
+{
+	ImageEncodeHelper e;
+
+	if (!e.Initialize(destFilename))
+	{
+		return false;
+	}
+
+	BYTE* pv = e.GetDataPointer();
+	uint32_t* pixelData = reinterpret_cast<uint32_t*>(pv);
+
+	for (int tileY = 0; tileY < g_tileYCount; ++tileY)
+	{
+		int destYOrigin = tileY * g_tileHeightInPixels;
+
+		for (int tileX = 0; tileX < g_tileXCount; ++tileX)
+		{
+			int destXOrigin = tileX * g_tileWidthInPixels;
+
+			int tileIndex = (tileY * g_tileXCount) + tileX;
+
+			for (int y = 0; y < 8; ++y)
 			{
-				int destXOrigin = tileX * g_tileWidthInPixels;
-
-				int tileIndex = (tileY * g_tileXCount) + tileX;
-
-				for (int y = 0; y < 8; ++y)
+				for (int x = 0; x < 8; ++x)
 				{
-					for (int x = 0; x < 8; ++x)
-					{
-						int palletizedColor = tiles.GetPalletizedValue(tileIndex, x, y);
+					int palletizedColor = tiles.GetPalletizedValue(tileIndex, x, y);
+					uint32_t rgba = PalletizedToRgba(palletizedColor);
 
-						uint32_t rgba = 0;
-						if (palletizedColor == 0)
-						{
-							rgba = 0xFF505050; // Background
-						}
-						if (palletizedColor == 1)
-						{
-							rgba = 0xFFE0A0C0; // Skin tone
-						}
-						else if (palletizedColor == 2)
-						{
-							rgba = 0xFF000000; // Outline
-						}
-						else if (palletizedColor == 3)
-						{
-							rgba = 0xFF60A0c0; // Equipment
-						}
-
-						int destX = destXOrigin + x;
-						int destY = destYOrigin + y;
-						int destPixelIndex = (destY * g_exportedImageWidthInPixels) + destX;
-						pixelData[destPixelIndex] = rgba;
-					}
+					int destX = destXOrigin + x;
+					int destY = destYOrigin + y;
+					int destPixelIndex = (destY * g_exportedImageWidthInPixels) + destX;
+					pixelData[destPixelIndex] = rgba;
 				}
 			}
 		}
 	}
 
-	if (!CheckCOMResult(frameEncode->WriteSource(
-		wicBitmap.Get(),
-		NULL)))
-	{
-		return false;
-	}
-
-	if (!CheckCOMResult(frameEncode->Commit()))
-	{
-		return false;
-	}
-
-	if (!CheckCOMResult(encoder->Commit()))
-	{
-		return false;
-	}
-
-	if (!CheckCOMResult(stream->Commit(STGC_DEFAULT)))
+	if (!e.Finalize())
 	{
 		return false;
 	}
 
 	return true;
+}
+
+enum BitmapCopyMode
+{
+	Default,
+	HFlip
+};
+
+void DrawTileToLockedBitmap(uint32_t* pixelData, TileGrid const& tiles, int tileIndex, int destXOrigin, int destYOrigin, BitmapCopyMode mode=Default)
+{
+	if (mode == Default)
+	{
+		for (int y = 0; y < 8; ++y)
+		{
+			for (int x = 0; x < 8; ++x)
+			{
+				int palletized = tiles.GetPalletizedValue(tileIndex, x, y);
+				uint32_t rgb = PalletizedToRgba(palletized);
+
+				int destX = destXOrigin + x;
+				int destY = destYOrigin + y;
+				int destPixelIndex = (destY * g_exportedImageWidthInPixels) + destX;
+				pixelData[destPixelIndex] = rgb;
+			}
+		}
+	}
+	else
+	{
+		assert(mode == HFlip);
+
+		for (int y = 0; y < 8; ++y)
+		{
+			for (int x = 0; x < 8; ++x)
+			{
+				int palletized = tiles.GetPalletizedValue(tileIndex, 8-x-1, y);
+				uint32_t rgb = PalletizedToRgba(palletized);
+
+				int destX = destXOrigin + x;
+				int destY = destYOrigin + y;
+				int destPixelIndex = (destY * g_exportedImageWidthInPixels) + destX;
+				pixelData[destPixelIndex] = rgb;
+			}
+		}
+	}
 }
 
 bool Export(std::wstring romFilename, std::wstring imageFilename)
@@ -337,27 +352,88 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 
 	ExportPalletizedTilesToImage(tiles, imageFilename);
 
-	TileGrid reformattedTiles;
+	{
+		ImageEncodeHelper e;
+		if (!e.Initialize(L"reformatted.png"))
+		{
+			return false;
+		}
 
-	reformattedTiles.CopyPalletizedValue(tiles, 0x4, 0x0);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x5, 0x1);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x6, 0x10);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x7, 0x11);
+		BYTE* pv = e.GetDataPointer();
+		uint32_t* pixelData = reinterpret_cast<uint32_t*>(pv);
 
+		// Do a clear
+		memset(pixelData, 0, g_exportedImageWidthInPixels * g_exportedImageHeightInPixels * sizeof(uint32_t));
 
-	reformattedTiles.CopyPalletizedValue(tiles, 0x44, 0x2);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x45, 0x3);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x46, 0x12);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x47, 0x13);
-	
+		// Medium /////////////////////////////////////////////////
+		int x = 0;
+		int y = 0;
+		DrawTileToLockedBitmap(pixelData, tiles, 0x4, x, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x5, x+8, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x6, x, y+8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x7, x+8, y+8);
 
-	reformattedTiles.CopyPalletizedValue(tiles, 0x80, 0x05);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x85, 0x14);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x86, 0x15);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x87, 0x24);
-	reformattedTiles.CopyPalletizedValue(tiles, 0x88, 0x25);
+		x = 0;
+		y = 17;
+		DrawTileToLockedBitmap(pixelData, tiles, 0xE5, x, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x01, x + 8, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x02, x, y + 8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x03, x + 8, y + 8);
 
-	ExportPalletizedTilesToImage(reformattedTiles, L"reformatted2.png");
+		x = 0;
+		y = 34;
+		DrawTileToLockedBitmap(pixelData, tiles, 0x22, x, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x23, x + 8, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x24, x, y + 8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x25, x + 8, y + 8);
+
+		// Fat /////////////////////////////////////////////////
+		x = 17;
+		y = 0;
+		DrawTileToLockedBitmap(pixelData, tiles, 0x44, x, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x45, x+8, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x46, x, y+8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x47, x + 8, y+8);
+
+		x = 17;
+		y = 34;
+		DrawTileToLockedBitmap(pixelData, tiles, 0x62, x, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x63, x + 8, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x64, x, y + 8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x65, x + 8, y + 8);
+
+		// Thin /////////////////////////////////////////////////
+		x = 34;
+		y = 0;
+		DrawTileToLockedBitmap(pixelData, tiles, 0x80, x+5, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x85, x, y+8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x86, x+8, y + 8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x87, x, y+16);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x88, x + 8, y + 16);
+
+		x = 34;
+		y = 34;
+		DrawTileToLockedBitmap(pixelData, tiles, 0x80, x+1, y); // redundant
+		DrawTileToLockedBitmap(pixelData, tiles, 0xA6, x, y + 8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x8C, x + 8, y + 8);
+		DrawTileToLockedBitmap(pixelData, tiles, 0xA7, x, y + 16);
+		DrawTileToLockedBitmap(pixelData, tiles, 0x8E, x + 8, y + 16);
+
+		// Referee /////////////////////////////////////////////////
+		x = 0;
+		y = 100;
+		DrawTileToLockedBitmap(pixelData, tiles, 0xE7, x, y, HFlip);
+		DrawTileToLockedBitmap(pixelData, tiles, 0xE7, x+8, y);
+		DrawTileToLockedBitmap(pixelData, tiles, 0xE9, x, y+8, HFlip);
+		DrawTileToLockedBitmap(pixelData, tiles, 0xE9, x + 8, y + 8);
+
+		// Puck
+		x = 0;
+		y = 119;
+		DrawTileToLockedBitmap(pixelData, tiles, 0xFE, x, y);
+
+		e.Finalize();
+	}
 
 	return true;
 }
@@ -414,29 +490,15 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 	for (size_t i = 0; i < rgbData.size(); ++i)
 	{
 		uint32_t rgb = rgbData[i];
-		uint32_t palletizedColor = 0;
-		if (rgb == 0xFF505050)
+		uint32_t palletizedColor = RgbToPalletized(rgb);
+
+		if (palletizedColor == -1)
 		{
-			palletizedColor = 0;
-		}
-		else if (rgb == 0xFFE0A0C0)
-		{
-			palletizedColor = 1;
-		}
-		else if (rgb == 0xFF000000)
-		{
-			palletizedColor = 2;
-		}
-		else if (rgb == 0xFF60A0c0)
-		{
-			palletizedColor = 3;
-		}
-		else
-		{
-			std::wcout << L"Encountered an unexpected color in the image to be imported.";
+			std::wcout << L"Encountered an unexpected color, 0x" << std::hex << rgb << L", in the image to be imported.";
 			DebugEvent();
 			return false;
 		}
+
 		palletizedImage.push_back(palletizedColor);
 	}
 
