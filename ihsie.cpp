@@ -78,6 +78,11 @@ public:
 	{
 		return &m_tiles[tileIndex];
 	}
+
+	void CopyPalletizedValue(TileGrid& from, int fromIndex, int toIndex)
+	{
+		memcpy(m_tiles[toIndex].Palletized, from.m_tiles[fromIndex].Palletized, sizeof(int) * 64);
+	}
 };
 
 bool CheckCOMResult(HRESULT hr)
@@ -332,7 +337,27 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 
 	ExportPalletizedTilesToImage(tiles, imageFilename);
 
-	std::vector<Tile> reformattedTiles;
+	TileGrid reformattedTiles;
+
+	reformattedTiles.CopyPalletizedValue(tiles, 0x4, 0x0);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x5, 0x1);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x6, 0x10);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x7, 0x11);
+
+
+	reformattedTiles.CopyPalletizedValue(tiles, 0x44, 0x2);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x45, 0x3);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x46, 0x12);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x47, 0x13);
+	
+
+	reformattedTiles.CopyPalletizedValue(tiles, 0x80, 0x05);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x85, 0x14);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x86, 0x15);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x87, 0x24);
+	reformattedTiles.CopyPalletizedValue(tiles, 0x88, 0x25);
+
+	ExportPalletizedTilesToImage(reformattedTiles, L"reformatted2.png");
 
 	return true;
 }
