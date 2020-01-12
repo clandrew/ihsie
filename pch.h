@@ -10,6 +10,7 @@
 #include <iostream>
 #include <assert.h>
 #include <fstream>
+#include <sstream>
 #include <vector>
 #include <initguid.h>
 #include <wincodec.h>

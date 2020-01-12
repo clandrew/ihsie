@@ -12,7 +12,6 @@ static const int g_tileYCount = 16;
 static const int g_exportedImageWidthInPixels = g_tileWidthInPixels * g_tileXCount;
 static const int g_exportedImageHeightInPixels = g_tileHeightInPixels * g_tileYCount;
 static const int g_bitSelectionReference[] = { 0x80, 0x40, 0x20, 0x10, 0x8, 0x4, 0x2, 0x1 };
-static const long g_imageDataOffset = 0x8010;
 
 // Globals
 ComPtr<IWICImagingFactory> g_wicImagingFactory;
@@ -260,7 +259,7 @@ bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilena
 	return true;
 }
 
-bool Export(std::wstring romFilename, std::wstring imageFilename)
+bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataRomOffset)
 {
 	// Load ROM file
 	FILE* file = {};	
@@ -273,7 +272,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 
 	for (int i = 0; i < 256; ++i)
 	{
-		long tileOffset = g_imageDataOffset + (i * 0x10);
+		long tileOffset = imageDataRomOffset + (i * 0x10);
 		if (!CheckZero(fseek(file, tileOffset, SEEK_SET)))
 		{
 			return false;
@@ -311,7 +310,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename)
 	return true;
 }
 
-bool Import(std::wstring sourceFilename, std::wstring romFilename)
+bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageDataRomOffset)
 {
 	ComPtr<IWICBitmapDecoder> spDecoder;
 	if (!CheckCOMResult(
@@ -487,7 +486,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename)
 	// Save tile data back into rom file
 	for (int tileIndex = 0; tileIndex < 256; tileIndex++)
 	{
-		int romOffset = g_imageDataOffset + (tileIndex * 16);
+		int romOffset = imageDataRomOffset + (tileIndex * 16);
 
 		for (int i = 0; i < 16; ++i)
 		{
@@ -521,14 +520,14 @@ void PrintUsage()
 {
 	std::wcout
 		<< L"Usage:\n"
-		<< L"\tihsie export icehockey.nes image.png\n"
+		<< L"\tihsie export icehockey.nes image.png 0x8010\n"
 		<< L"or\n"
-		<< L"\tihsie import image.png icehockey.nes\n";
+		<< L"\tihsie import image.png icehockey.nes 0x8010\n";
 }
 
 int wmain(int argc, void** argv)
 {
-	if (argc < 4)
+	if (argc < 5)
 	{
 		PrintUsage();
 		return -1;
@@ -537,6 +536,11 @@ int wmain(int argc, void** argv)
 	std::wstring op = reinterpret_cast<wchar_t*>(argv[1]);
 	std::wstring filename1 = reinterpret_cast<wchar_t*>(argv[2]);
 	std::wstring filename2 = reinterpret_cast<wchar_t*>(argv[3]);
+
+	std::wstring imageDataOffsetStr = reinterpret_cast<wchar_t*>(argv[4]);
+	std::wstringstream imageDataOffsetStrStrm(imageDataOffsetStr);
+	int romImageDataOffset;
+	imageDataOffsetStrStrm >> std::hex >> romImageDataOffset;
 	
 	if (!CheckCOMResult(CoInitialize(nullptr)))
 	{
@@ -555,14 +559,14 @@ int wmain(int argc, void** argv)
 
 	if (op == L"export")
 	{
-		if (!Export(filename1, filename2))
+		if (!Export(filename1, filename2, romImageDataOffset))
 		{
 			return -1;
 		}
 	}
 	else if (op == L"import")
 	{
-		if (!Import(filename1, filename2))
+		if (!Import(filename1, filename2, romImageDataOffset))
 		{
 			return -1;
 		}
