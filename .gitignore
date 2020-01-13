@@ -3,3 +3,5 @@ Debug/*
 *.nes
 *.png
 *.psd
+Release/*
+*.tscproj
