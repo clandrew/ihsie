@@ -1,5 +1,5 @@
 # ihsie - NES Sprite Import/Export Tool
-This tool allows you to
+This command-line tool allows you to
 * Export sprite data from a NES ROM to a PNG image file
 * Import sprite data from a PNG image file to a NES ROM
 
@@ -9,9 +9,10 @@ The program exports tiles of the 2BPP NES format with the ordering labeled "é€šå
 
 I was so close to simply using an already-existing program, e.g., YY-CHR, to do the things I wanted to do, but they fell short. Since I understood the image encoding format involved well enough, it wasn't too much work to write a tool to do it. From there, it also wasn't too much work to generalize the program and post it here.
 
+## Demo
 ![Example image](https://raw.githubusercontent.com/clandrew/ihsie/master/Demo.gif "Example image")
 
-## Workflow
+## Workflow and Usage
 ```
 ihsie export original.nes reference.png 0x8010 4096
 
