@@ -6,11 +6,9 @@
 
 // Constants
 static const int g_tileWidthInPixels = 8;
-static const int g_tileXCount = 16;
 static const int g_tileHeightInPixels = 8;
-static const int g_tileYCount = 16;
-static const int g_exportedImageWidthInPixels = g_tileWidthInPixels * g_tileXCount;
-static const int g_exportedImageHeightInPixels = g_tileHeightInPixels * g_tileYCount;
+static const int g_romDataBytesPerTile = 16;
+static const int g_exportedImageTileXCount = 16;
 static const int g_bitSelectionReference[] = { 0x80, 0x40, 0x20, 0x10, 0x8, 0x4, 0x2, 0x1 };
 
 // Globals
@@ -34,10 +32,10 @@ class TileGrid
 	std::vector<Tile> m_tiles;
 
 public:
-	TileGrid()
+	TileGrid(int tileXCount, int tileYCount)
+		: m_tileXCount(tileXCount)
+		, m_tileYCount(tileYCount)
 	{
-		m_tileXCount = 16;
-		m_tileYCount = 16;
 		m_tiles.resize(m_tileXCount * m_tileYCount);
 	}
 
@@ -107,7 +105,7 @@ class ImageEncodeHelper
 	BYTE* m_dataPointer;
 
 public:
-	bool Initialize(std::wstring destFilename)
+	bool Initialize(std::wstring destFilename, int imageWidth, int imageHeight)
 	{
 		if (!CheckCOMResult(g_wicImagingFactory->CreateStream(&m_stream)))
 		{
@@ -130,8 +128,8 @@ public:
 		}
 
 		if (!CheckCOMResult(g_wicImagingFactory->CreateBitmap(
-			g_exportedImageWidthInPixels,
-			g_exportedImageHeightInPixels,
+			imageWidth,
+			imageHeight,
 			GUID_WICPixelFormat32bppPBGRA, WICBitmapCacheOnDemand, &m_wicBitmap)))
 		{
 			return false;
@@ -147,7 +145,7 @@ public:
 			return false;
 		}
 
-		if (!CheckCOMResult(m_frameEncode->SetSize(g_exportedImageWidthInPixels, g_exportedImageHeightInPixels)))
+		if (!CheckCOMResult(m_frameEncode->SetSize(imageWidth, imageHeight)))
 		{
 			return false;
 		}
@@ -164,7 +162,7 @@ public:
 		}
 
 		ComPtr<IWICBitmapLock> bitmapLock;
-		WICRect rcLock = { 0, 0, g_exportedImageWidthInPixels, g_exportedImageHeightInPixels };
+		WICRect rcLock = { 0, 0, imageWidth, imageHeight };
 		if (!CheckCOMResult(m_wicBitmap->Lock(&rcLock, WICBitmapLockWrite, &bitmapLock)))
 		{
 			return false;
@@ -213,11 +211,18 @@ public:
 	}
 };
 
-bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilename)
+bool ExportPalletizedTilesToImage(
+	TileGrid const& tiles, 
+	std::wstring destFilename, 
+	int exportedImageTileXCount,
+	int exportedImageTileYCount)
 {
 	ImageEncodeHelper e;
+	
+	int exportedImageWidthInPixels = exportedImageTileXCount * g_tileWidthInPixels;
+	int exportedImageHeightInPixels = exportedImageTileYCount * g_tileHeightInPixels;
 
-	if (!e.Initialize(destFilename))
+	if (!e.Initialize(destFilename, exportedImageWidthInPixels, exportedImageHeightInPixels))
 	{
 		return false;
 	}
@@ -225,15 +230,15 @@ bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilena
 	BYTE* pv = e.GetDataPointer();
 	uint32_t* pixelData = reinterpret_cast<uint32_t*>(pv);
 
-	for (int tileY = 0; tileY < g_tileYCount; ++tileY)
+	for (int tileY = 0; tileY < exportedImageTileYCount; ++tileY)
 	{
 		int destYOrigin = tileY * g_tileHeightInPixels;
 
-		for (int tileX = 0; tileX < g_tileXCount; ++tileX)
+		for (int tileX = 0; tileX < exportedImageTileXCount; ++tileX)
 		{
 			int destXOrigin = tileX * g_tileWidthInPixels;
 
-			int tileIndex = (tileY * g_tileXCount) + tileX;
+			int tileIndex = (tileY * exportedImageTileXCount) + tileX;
 
 			for (int y = 0; y < 8; ++y)
 			{
@@ -244,7 +249,7 @@ bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilena
 
 					int destX = destXOrigin + x;
 					int destY = destYOrigin + y;
-					int destPixelIndex = (destY * g_exportedImageWidthInPixels) + destX;
+					int destPixelIndex = (destY * exportedImageWidthInPixels) + destX;
 					pixelData[destPixelIndex] = rgba;
 				}
 			}
@@ -259,7 +264,7 @@ bool ExportPalletizedTilesToImage(TileGrid const& tiles, std::wstring destFilena
 	return true;
 }
 
-bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataRomOffset)
+bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataRomOffset, int exportedByteLength)
 {
 	// Load ROM file
 	FILE* file = {};	
@@ -268,9 +273,12 @@ bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataR
 		return false;
 	}
 
-	TileGrid tiles;
+	// exportedByteLength
+	int exportedTileCount = exportedByteLength / g_romDataBytesPerTile;
+	int exportedImageTileYCount = exportedTileCount / g_exportedImageTileXCount;
 
-	for (int i = 0; i < 256; ++i)
+	TileGrid tiles(g_exportedImageTileXCount, exportedImageTileYCount);
+	for (int i = 0; i < exportedTileCount; ++i)
 	{
 		long tileOffset = imageDataRomOffset + (i * 0x10);
 		if (!CheckZero(fseek(file, tileOffset, SEEK_SET)))
@@ -305,7 +313,11 @@ bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataR
 		}
 	}
 
-	ExportPalletizedTilesToImage(tiles, imageFilename);
+	ExportPalletizedTilesToImage(
+		tiles, 
+		imageFilename, 
+		g_exportedImageTileXCount,
+		exportedImageTileYCount);
 
 	return true;
 }
@@ -348,6 +360,18 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageData
 		return false;
 	}
 
+	if (refImageWidth % g_tileWidthInPixels != 0)
+	{
+		std::wcout << L"Image to import must have a width divisible by " << g_tileWidthInPixels << L".\n";
+		return false;
+	}
+
+	if (refImageHeight % g_tileHeightInPixels != 0)
+	{
+		std::wcout << L"Image to import must have a height divisible by " << g_tileHeightInPixels << L".\n";
+		return false;
+	}
+
 	std::vector<uint32_t> rgbData;
 	rgbData.resize(refImageWidth * refImageHeight);
 	const UINT srcImageSizeInBytes = refImageWidth * refImageHeight * 4;
@@ -374,14 +398,17 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageData
 		palletizedImage.push_back(palletizedColor);
 	}
 
-	TileGrid tiles;
+	int inputImageTileXCount = refImageWidth / g_tileWidthInPixels;
+	int inputImageTileYCount = refImageHeight / g_tileHeightInPixels;
+	
+	TileGrid tiles(inputImageTileXCount, inputImageTileYCount);
 	for (size_t i = 0; i < palletizedImage.size(); ++i)
 	{
-		int imageX = i % g_exportedImageWidthInPixels;
-		int imageY = i / g_exportedImageWidthInPixels;
+		int imageX = i % refImageWidth;
+		int imageY = i / refImageWidth;
 		int tileX = imageX / g_tileWidthInPixels;
 		int tileY = imageY / g_tileHeightInPixels;
-		int tileIndex = (tileY * g_tileXCount) + tileX;
+		int tileIndex = (tileY * inputImageTileXCount) + tileX;
 
 		int xWithinTile = imageX % g_tileWidthInPixels;
 		int yWithinTile = imageY % g_tileHeightInPixels;
@@ -389,11 +416,11 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageData
 		tiles.SetPalletizedValue(tileIndex, xWithinTile, yWithinTile, palletizedImage[i]);
 	}
 
-	for (int tileY = 0; tileY < g_tileYCount; ++tileY)
+	for (int tileY = 0; tileY < inputImageTileYCount; ++tileY)
 	{
-		for (int tileX = 0; tileX < g_tileXCount; ++tileX)
+		for (int tileX = 0; tileX < inputImageTileXCount; ++tileX)
 		{
-			int tileIndex = (tileY * g_tileXCount) + tileX;
+			int tileIndex = (tileY * inputImageTileXCount) + tileX;
 
 			// Turn palletized into RawData
 			for (int y = 0; y < 8; ++y)
@@ -520,7 +547,7 @@ void PrintUsage()
 {
 	std::wcout
 		<< L"Usage:\n"
-		<< L"\tihsie export icehockey.nes image.png 0x8010\n"
+		<< L"\tihsie export icehockey.nes image.png 0x8010 4096\n"
 		<< L"or\n"
 		<< L"\tihsie import image.png icehockey.nes 0x8010\n";
 }
@@ -538,7 +565,7 @@ int wmain(int argc, void** argv)
 	std::wstring filename2 = reinterpret_cast<wchar_t*>(argv[3]);
 
 	std::wstring imageDataOffsetStr = reinterpret_cast<wchar_t*>(argv[4]);
-	std::wstringstream imageDataOffsetStrStrm(imageDataOffsetStr);
+	std::wistringstream imageDataOffsetStrStrm(imageDataOffsetStr);
 	int romImageDataOffset;
 	imageDataOffsetStrStrm >> std::hex >> romImageDataOffset;
 	
@@ -559,7 +586,12 @@ int wmain(int argc, void** argv)
 
 	if (op == L"export")
 	{
-		if (!Export(filename1, filename2, romImageDataOffset))
+		std::wstring byteLengthStr = reinterpret_cast<wchar_t*>(argv[5]);
+		std::wistringstream byteLengthStrStrm(imageDataOffsetStr);
+		int byteLength;
+		byteLengthStrStrm >> byteLength;
+
+		if (!Export(filename1, filename2, romImageDataOffset, byteLength))
 		{
 			return -1;
 		}
