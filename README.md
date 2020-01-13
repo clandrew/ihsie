@@ -10,6 +10,9 @@ The program exports tiles of the 2BPP NES format with the ordering labeled "é€šå
 I was so close to simply using an already-existing program, e.g., YY-CHR, to do the things I wanted to do, but they fell short. Since I understood the image encoding format involved well enough, it wasn't too much work to write a tool to do it. From there, it also wasn't too much work to generalize the program and post it here.
 
 ## Demo
+
+This shows the process of quickly changing the puck sprite to be crossed-out.
+
 ![Example image](https://raw.githubusercontent.com/clandrew/ihsie/master/Demo.gif "Example image")
 
 ## Workflow and Usage
