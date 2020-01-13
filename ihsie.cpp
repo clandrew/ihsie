@@ -273,7 +273,6 @@ bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataR
 		return false;
 	}
 
-	// exportedByteLength
 	int exportedTileCount = exportedByteLength / g_romDataBytesPerTile;
 	int exportedImageTileYCount = exportedTileCount / g_exportedImageTileXCount;
 
@@ -301,14 +300,14 @@ bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataR
 		return false;
 	}
 
-	for (int i = 0; i < 256; ++i)
+	for (int tileIndex = 0; tileIndex < exportedTileCount; ++tileIndex)
 	{
 		for (int y = 0; y < 8; ++y)
 		{
 			for (int x = 0; x < 8; ++x)
 			{
-				int decodedValue = Decode(tiles.GetTile(i)->RawData, 0 + y, 8 + y, g_bitSelectionReference[x]);
-				tiles.SetPalletizedValue(i, x, y, decodedValue);
+				int decodedValue = Decode(tiles.GetTile(tileIndex)->RawData, 0 + y, 8 + y, g_bitSelectionReference[x]);
+				tiles.SetPalletizedValue(tileIndex, x, y, decodedValue);
 			}
 		}
 	}
@@ -400,6 +399,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageData
 
 	int inputImageTileXCount = refImageWidth / g_tileWidthInPixels;
 	int inputImageTileYCount = refImageHeight / g_tileHeightInPixels;
+	int inputImageTileCount = inputImageTileXCount * inputImageTileYCount;
 	
 	TileGrid tiles(inputImageTileXCount, inputImageTileYCount);
 	for (size_t i = 0; i < palletizedImage.size(); ++i)
@@ -470,54 +470,52 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageData
 	}
 
 	std::vector<byte> romData;
+
+	FILE* file = {};
+	if (!CheckErrno(_wfopen_s(&file, romFilename.c_str(), L"rb")))
 	{
+		return false;
+	}
+	if (!CheckZero(fseek(file, 0, SEEK_END)))
+	{
+		return false;
+	}
 
-		FILE* file = {};
-		if (!CheckErrno(_wfopen_s(&file, romFilename.c_str(), L"rb")))
-		{
-			return false;
-		}
-		if (!CheckZero(fseek(file, 0, SEEK_END)))
-		{
-			return false;
-		}
+	long fileLength = ftell(file);
+	if (fileLength == 0)
+	{
+		std::wcout << L"File " << sourceFilename.c_str() << L"is unexpectedly of length 0.\n";
+		DebugEvent();
+		return false;
+	}
 
-		long fileLength = ftell(file);
-		if (fileLength == 0)
-		{
-			std::wcout << L"File " << sourceFilename.c_str() << L"is unexpectedly of length 0.\n";
-			DebugEvent();
-			return false;
-		}
+	romData.resize(fileLength);
 
-		romData.resize(fileLength);
+	if (!CheckZero(fseek(file, 0, SEEK_SET)))
+	{
+		return false;
+	}
+	size_t readAmount = fread(romData.data(), 1, fileLength, file);
+	if (readAmount != fileLength)
+	{
+		std::wcout << L"Encountered I/O error when reading a file.\n";
+		DebugEvent();
+		return false;
+	}
 
-		if (!CheckZero(fseek(file, 0, SEEK_SET)))
-		{
-			return false;
-		}
-		size_t readAmount = fread(romData.data(), 1, fileLength, file);
-		if (readAmount != fileLength)
-		{
-			std::wcout << L"Encountered I/O error when reading a file.\n";
-			DebugEvent();
-			return false;
-		}
-
-		if (!CheckZero(fclose(file)))
-		{
-			return false;
-		}
+	if (!CheckZero(fclose(file)))
+	{
+		return false;
 	}
 
 	// Save tile data back into rom file
-	for (int tileIndex = 0; tileIndex < 256; tileIndex++)
+	for (int tileIndex = 0; tileIndex < inputImageTileCount; tileIndex++)
 	{
-		int romOffset = imageDataRomOffset + (tileIndex * 16);
+		int romOffset = imageDataRomOffset + (tileIndex * g_romDataBytesPerTile);
 
-		for (int i = 0; i < 16; ++i)
+		for (int byteIndex = 0; byteIndex < g_romDataBytesPerTile; ++byteIndex)
 		{
-			romData[romOffset + i] = tiles.GetRawDataField(tileIndex, i);
+			romData[romOffset + byteIndex] = tiles.GetRawDataField(tileIndex, byteIndex);
 		}
 	}
 	{
@@ -568,6 +566,13 @@ int wmain(int argc, void** argv)
 	std::wistringstream imageDataOffsetStrStrm(imageDataOffsetStr);
 	int romImageDataOffset;
 	imageDataOffsetStrStrm >> std::hex >> romImageDataOffset;
+
+	if (romImageDataOffset <= 0)
+	{
+		std::wcout << L"Invalid rom offset of 0x" << std::hex << romImageDataOffset << L" specified.\n";
+		DebugEvent();
+		return -1;
+	}
 	
 	if (!CheckCOMResult(CoInitialize(nullptr)))
 	{
@@ -586,10 +591,23 @@ int wmain(int argc, void** argv)
 
 	if (op == L"export")
 	{
+		if (argc < 6)
+		{
+			PrintUsage();
+			return -1;
+		}
+
 		std::wstring byteLengthStr = reinterpret_cast<wchar_t*>(argv[5]);
-		std::wistringstream byteLengthStrStrm(imageDataOffsetStr);
-		int byteLength;
+		std::wistringstream byteLengthStrStrm(byteLengthStr);
+		int byteLength{};
 		byteLengthStrStrm >> byteLength;
+
+		if (byteLength <= 0)
+		{
+			std::wcout << L"Invalid byte length of " << byteLength << L" specified.\n";
+			DebugEvent();
+			return -1;
+		}
 
 		if (!Export(filename1, filename2, romImageDataOffset, byteLength))
 		{
@@ -605,6 +623,7 @@ int wmain(int argc, void** argv)
 	}
 	else
 	{
+		std::wcout << L"Invalid usage mode specified.\n";
 		PrintUsage();
 		return -1;
 	}
