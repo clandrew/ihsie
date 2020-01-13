@@ -8,6 +8,7 @@
 static const int g_tileWidthInPixels = 8;
 static const int g_tileHeightInPixels = 8;
 static const int g_romDataBytesPerTile = 16;
+static const int g_romDataBytesPerHalfTile = g_romDataBytesPerTile / 2;
 static const int g_exportedImageTileXCount = 16;
 static const int g_bitSelectionReference[] = { 0x80, 0x40, 0x20, 0x10, 0x8, 0x4, 0x2, 0x1 };
 
@@ -16,13 +17,13 @@ ComPtr<IWICImagingFactory> g_wicImagingFactory;
 
 struct RawTileData
 {
-	byte Data[16];
+	byte Data[g_romDataBytesPerTile];
 };
 
 struct Tile
 {
 	RawTileData RawData;
-	int Palletized[8 * 8];
+	int Palletized[g_tileWidthInPixels * g_tileHeightInPixels];
 };
 
 class TileGrid
@@ -41,13 +42,13 @@ public:
 
 	void SetPalletizedValue(int tileIndex, int xPosition, int yPosition, int value)
 	{
-		int pixelIndex = (yPosition * 8) + xPosition;
+		int pixelIndex = (yPosition * g_tileWidthInPixels) + xPosition;
 		m_tiles[tileIndex].Palletized[pixelIndex] = value;
 	}
 
 	int GetPalletizedValue(int tileIndex, int xPosition, int yPosition) const
 	{
-		int pixelIndex = (yPosition * 8) + xPosition;
+		int pixelIndex = (yPosition * g_tileWidthInPixels) + xPosition;
 		return m_tiles[tileIndex].Palletized[pixelIndex];
 	}
 
@@ -240,9 +241,9 @@ bool ExportPalletizedTilesToImage(
 
 			int tileIndex = (tileY * exportedImageTileXCount) + tileX;
 
-			for (int y = 0; y < 8; ++y)
+			for (int y = 0; y < g_tileHeightInPixels; ++y)
 			{
-				for (int x = 0; x < 8; ++x)
+				for (int x = 0; x < g_tileWidthInPixels; ++x)
 				{
 					int palletizedColor = tiles.GetPalletizedValue(tileIndex, x, y);
 					uint32_t rgba = PalletizedToRgba(palletizedColor);
@@ -279,7 +280,7 @@ bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataR
 	TileGrid tiles(g_exportedImageTileXCount, exportedImageTileYCount);
 	for (int i = 0; i < exportedTileCount; ++i)
 	{
-		long tileOffset = imageDataRomOffset + (i * 0x10);
+		long tileOffset = imageDataRomOffset + (i * g_romDataBytesPerTile);
 		if (!CheckZero(fseek(file, tileOffset, SEEK_SET)))
 		{
 			return false;
@@ -299,14 +300,14 @@ bool Export(std::wstring romFilename, std::wstring imageFilename, int imageDataR
 		DebugEvent();
 		return false;
 	}
-
+	
 	for (int tileIndex = 0; tileIndex < exportedTileCount; ++tileIndex)
 	{
-		for (int y = 0; y < 8; ++y)
+		for (int y = 0; y < g_tileHeightInPixels; ++y)
 		{
-			for (int x = 0; x < 8; ++x)
+			for (int x = 0; x < g_tileWidthInPixels; ++x)
 			{
-				int decodedValue = Decode(tiles.GetTile(tileIndex)->RawData, 0 + y, 8 + y, g_bitSelectionReference[x]);
+				int decodedValue = Decode(tiles.GetTile(tileIndex)->RawData, 0 + y, g_romDataBytesPerHalfTile + y, g_bitSelectionReference[x]);
 				tiles.SetPalletizedValue(tileIndex, x, y, decodedValue);
 			}
 		}
@@ -423,9 +424,9 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageData
 			int tileIndex = (tileY * inputImageTileXCount) + tileX;
 
 			// Turn palletized into RawData
-			for (int y = 0; y < 8; ++y)
+			for (int y = 0; y < g_tileHeightInPixels; ++y)
 			{
-				for (int x = 0; x < 8; ++x)
+				for (int x = 0; x < g_tileWidthInPixels; ++x)
 				{
 					int palletized = tiles.GetPalletizedValue(tileIndex, x, y);
 
@@ -453,7 +454,7 @@ bool Import(std::wstring sourceFilename, std::wstring romFilename, int imageData
 
 					int bitSelect = g_bitSelectionReference[x];
 					int firstByteIndex = 0 + y;
-					int secondByteIndex = 8 + y;
+					int secondByteIndex = g_romDataBytesPerHalfTile + y;
 
 					if (f0)
 					{
