@@ -8,3 +8,19 @@ Originally, this fell out of something specific I was trying to do with a specif
 The program exports tiles of the 2BPP NES format with the ordering labeled "通常表示" ("Normal Ordering") in YY-CHR.
 
 I was so close to simply using an already-existing program, e.g., YY-CHR, to do the things I wanted to do, but they fell short. Since I understood the image encoding format involved well enough, it wasn't too much work to write a tool to do it. From there, it also wasn't too much work to generalize the program and post it here.
+
+## Workflow
+```
+ihsie export original.nes reference.png 0x8010 4096
+
+!! Edit reference.png in an image editor of your choice.
+
+copy /Y original.nes test.nes
+
+ihsie import image.png test.nes 0x8010
+```
+
+This allows you to edit sprites; they will be patched into test.nes.
+
+## Build
+The tool is built and tested for a Windows-based operating environment on x86-64 computer architecture. The code is set up as a Visual Studio 2019 solution.
