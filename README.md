@@ -11,7 +11,7 @@ I was so close to simply using an already-existing program, e.g., YY-CHR, to do 
 
 ## Demo
 
-This shows the process of quickly changing the puck sprite to be crossed-out.
+This shows the process of quickly changing the puck sprite to be crossed-out. The emulation speed is slowed-down to make stuff easier to see.
 
 ![Example image](https://raw.githubusercontent.com/clandrew/ihsie/master/Demo.gif "Example image")
 
