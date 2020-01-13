@@ -23,7 +23,7 @@ ihsie export original.nes reference.png 0x8010 4096
 
 copy /Y original.nes test.nes
 
-ihsie import image.png test.nes 0x8010
+ihsie import reference.png test.nes 0x8010
 ```
 
 This allows you to edit sprites; they will be patched into test.nes.
