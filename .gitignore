@@ -1,8 +1,8 @@
 .vs/*
 Debug/*
 *.nes
-*.png
 *.psd
 Release/*
 *.tscproj
 *.exe
+Data/*

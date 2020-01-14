@@ -1,0 +1,24 @@
+To apply the patch (easy):
+	- Use LunarIPS to apply patch.ips to the NA ROM release of Ice Hockey. 
+	- Other programs might work but haven't been tested.
+	
+To use ihsie to patch (more manual):
+
+	Get your copy of the Ice Hockey ROM, called icehockey.nes.
+	
+	Run the following commands	
+	
+	copy /Y icehockey.nes icehockey.orig.nes
+	(to create a backup in case something goes wrong)
+	
+	ihsie import icehockeysprites_8010.png icehockey.nes 0x8010
+	ihsie import icehockeysprites_9010.png icehockey.nes 0x9010
+
+Enjoy!
+
+==================================
+Release notes
+-------------
+
+1.0: Sprite replacement.
+1.1: Added some flavor to the title screen
