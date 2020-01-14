@@ -5,3 +5,4 @@ Debug/*
 *.psd
 Release/*
 *.tscproj
+*.exe
