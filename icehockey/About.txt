@@ -22,3 +22,5 @@ Release notes
 
 1.0: Sprite replacement.
 1.1: Added some flavor to the title screen
+1.2: Cleanup
+1.3: Fixed missing bun in one frame of heavy player animation, fixed back-of-ref's-head-during-penalty animation
