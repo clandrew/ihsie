@@ -29,4 +29,4 @@ ihsie import reference.png test.nes 0x8010
 This allows you to edit sprites; they will be patched into test.nes.
 
 ## Build
-The tool is built and tested for a Windows-based operating environment on x86-64 computer architecture. The code is set up as a Visual Studio 2019 solution.
+The tool is built and tested for a Windows-based operating environment on x86-64 computer architecture. It's a command line program written in C++. The code is set up as a Visual Studio 2019 solution.
